@@ -37,7 +37,7 @@ HOMEWORK_VERDICTS = {
 
 
 def check_tokens():
-    """Проверка доступности переменных окружения"""
+    """Проверка доступности переменных окружения."""
     if not PRACTICUM_TOKEN or not TELEGRAM_TOKEN or not TELEGRAM_CHAT_ID:
         logging.critical('Отсутствут обязательные переменные.')
         sys.exit()
