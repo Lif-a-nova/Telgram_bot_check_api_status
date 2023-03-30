@@ -1,14 +1,14 @@
 import logging
 import os
-import requests
-import sys
-import telegram
 import time
-
-
-from requests.exceptions import RequestException
 from http import HTTPStatus
+
+import requests
+import telegram
 from dotenv import load_dotenv
+from requests.exceptions import RequestException
+
+from exceptions import HTTPException
 
 load_dotenv()
 
@@ -40,9 +40,7 @@ def check_tokens():
     """Проверка доступности переменных окружения."""
     if not PRACTICUM_TOKEN or not TELEGRAM_TOKEN or not TELEGRAM_CHAT_ID:
         logging.critical('Отсутствут обязательные переменные.')
-        sys.exit()
-    else:
-        return True
+        raise KeyError('Отсутствут обязательные переменные.')
 
 
 def get_api_answer(timestamp):
@@ -55,10 +53,14 @@ def get_api_answer(timestamp):
                               ) from error
 
     if response.status_code != HTTPStatus.OK:
-        raise ConnectionError(f'Сайт недоступен: {response.status_code}')
+        code = response.status_code
+        text = response.text
+        details = f'Кода ответа: {code}, сообщение об ошибке: {text}'
+        raise HTTPException(f'Ошибка ответа сервера. {details}')
 
-    response = response.json()
-    return response
+    if response == '':
+        raise TypeError('Полученные данные не содержат информации')
+    return response.json()
 
 
 def check_response(response):
@@ -75,7 +77,7 @@ def check_response(response):
     if not isinstance(response['homeworks'], list):
         raise TypeError('Значение ключа homeworks - не список.')
 
-    homework = response['homeworks']
+    homework = response['homeworks'][0]
     return homework
 
 
@@ -84,11 +86,11 @@ def parse_status(homework):
     if not isinstance(homework, dict):
         raise TypeError('Ответ API - не словарь.')
     if 'homework_name' not in homework:
-        raise KeyError('Переменная homework_name отсутствует')
+        raise KeyError('Ключ homework_name отсутствует')
     homework_name = homework['homework_name']
 
     if 'status' not in homework:
-        raise KeyError('Переменная status отсутствует')
+        raise KeyError('Ключ status отсутствует')
     homework_status = homework['status']
 
     if homework_status not in HOMEWORK_VERDICTS:
@@ -110,19 +112,16 @@ def send_message(bot, message):
 
 def main():
     """Основная логика работы бота."""
-    if not check_tokens():
-        sys.exit()
+    check_tokens()
     bot = telegram.Bot(token=TELEGRAM_TOKEN)
     timestamp = int(time.time())
 
     while True:
         try:
             response = get_api_answer(timestamp)
-            check_response(response)
-            if response['homeworks']:
-                homework = response['homeworks'][0]
-                message = parse_status(homework)
-                send_message(bot, message)
+            homework = check_response(response)
+            message = parse_status(homework)
+            send_message(bot, message)
         except Exception as error:
             message = f'Сбой в работе программы: {error}'
             logging.exception(message)
@@ -139,6 +138,3 @@ if __name__ == '__main__':
         logging.critical('Bot остановлен вручную.')
         bot = telegram.Bot(token=TELEGRAM_TOKEN)
         bot.send_message(TELEGRAM_CHAT_ID, 'Bot остановлен вручную.')
-# У меня вопрос: я не нашла исключение, если ВДРУГ рухнул сервер,
-# что бы тоже Бот успел отправить сообщение.
-# Как это сделать?
